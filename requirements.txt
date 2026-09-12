@@ -1,0 +1,7 @@
+# Runtime deps of the pipeline code (Airflow itself comes from the image)
+requests>=2.32
+psycopg[binary]>=3.2
+
+# Dev / test
+pytest>=8.0
+ruff>=0.6

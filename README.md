@@ -48,7 +48,7 @@ today's, and it is the single most common thing tutorials get wrong.
 
 The Airflow interval is half-open (`[start, end)`) while the BCB API window is
 inclusive on both ends, so `fetch` subtracts one day before calling out.
-Adjacent runs therefore cannot claim each other's rows — and
+Adjacent runs therefore cannot claim each other's rows, and
 `test_interval_end_is_exclusive` pins that down.
 
 ### Idempotency is delete-then-insert, in one transaction
@@ -83,7 +83,7 @@ source is broken without opening a log.
 ### The API client treats rate limits as normal, not exceptional
 
 `429` and `5xx` are retried with exponential backoff plus jitter. Any other
-`4xx` fails immediately — retrying a malformed request never helps, and burning
+`4xx` fails immediately, retrying a malformed request never helps, and burning
 five attempts on a `404` only delays the alert. A `200` carrying non-JSON (the
 BCB's failure mode under load) is treated as retryable.
 
@@ -101,7 +101,7 @@ run to read as if it were complete. Paths are a pure function of
 ### Two databases, on purpose
 
 The warehouse is a separate Postgres from Airflow's metadata database. Sharing
-them is convenient in a demo and indefensible anywhere else — a warehouse query
+them is convenient in a demo and indefensible anywhere else, a warehouse query
 that locks a table should never be able to stall the scheduler.
 
 ---
@@ -138,6 +138,31 @@ make psql
 Clear any completed task in the Grid view and let it re-run, then re-count. The
 row count does not change. That is the whole thesis of the repository, and it
 takes ten seconds to check.
+
+---
+
+```text
+bcb-airflow-pipeline/
+├── dags/
+│   └── bcb_ingest.py              # a DAG: fetch → load_bronze → quality_check
+├── include/
+│   ├── config.py                  # series registry, adding one is a 1-line change
+│   ├── bcb_client.py              # SGS client: retry/backoff, 4xx fails fast
+│   ├── storage.py                 # atomic landing-zone writes (tmp + rename)
+│   ├── warehouse.py               # delete-insert per interval, one transaction
+│   └── quality.py                 # pure assertion rules, unit-tested
+├── sql/
+│   ├── 001_bronze.sql             # bronze table + PK, runs on first boot
+│   └── 002_silver.sql             # silver view — the designed extension point
+├── tests/
+│   ├── test_bcb_client.py         # parsing, retries, failure modes (fixtures, no network)
+│   ├── test_quality_and_storage.py
+│   └── test_dag_integrity.py      # imports, retries, catchup, cycles
+├── docker-compose.override.yaml   # separate warehouse Postgres + project mounts
+├── Makefile                       # init · up · test · backfill · psql
+├── requirements.txt
+└── .env.example
+```
 
 ---
 

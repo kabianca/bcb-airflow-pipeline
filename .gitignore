@@ -1,0 +1,10 @@
+.env
+data/
+logs/
+plugins/
+docker-compose.yaml     # fetched by `make init`, pinned in the Makefile
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
