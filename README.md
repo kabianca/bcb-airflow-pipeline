@@ -196,7 +196,7 @@ make up       # starts Airflow + the warehouse
 make test     # test suite, no Docker or network required
 ```
 
-Airflow UI: <http://localhost:8080>
+Airflow UI: <http://localhost:8080>: user `airflow`, password `airflow`, created by the init container on first start. If the login is rejected it usually has not finished; `docker compose logs airflow-init` will say so.
 
 Create the pool the fetch task uses (once), then backfill a month:
 
@@ -323,8 +323,10 @@ backfillable. These are the seams, in the order I would actually build them:
   container start, which is fine for a laptop and unacceptable for a deploy.
 - **Secrets from a real backend.** Azure Key Vault or AWS Secrets Manager via
   Airflow's secrets backend, not environment variables.
-- **Authentication.** Auth is disabled in the local compose; this stack binds
-  to localhost and holds public data. A deployed instance would not.
+- **Authentication.** The local compose ships Airflow's FAB auth manager with a
+  single `airflow` / `airflow` account created on first start, fine for a laptop
+  bound to localhost holding public data. A deployed instance would use a real
+  identity provider and no default credentials.
 - **A freshness SLA.** Right now nothing complains if a run simply never fires.
 - **Schema contracts on the source.** Today a silently added API field is
   ignored; it should be detected.

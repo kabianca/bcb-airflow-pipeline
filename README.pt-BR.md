@@ -124,9 +124,13 @@ make up       # sobe o Airflow + o warehouse
 make test     # suíte de testes, sem Docker e sem rede
 ```
 
-Interface do Airflow: <http://localhost:8080>
+Airflow UI: <http://localhost:8080>: 
 
-Crie a pool que a task `fetch` usa (uma vez) e rode o _backfill_ de um mês:
+- usuário `airflow`
+- senha `airflow`
+
+Criados pelo
+container de init no primeiro start. Se o login for recusado, normalmente é porque ele ainda não terminou => `docker compose logs airflow-init` mostra isso. Crie a pool que a task `fetch` usa (uma vez) e rode o _backfill_ de um mês:
 
 ```bash
 docker compose exec airflow-scheduler airflow pools set bcb_api 1 "BCB API rate limit"
@@ -236,7 +240,7 @@ O repositório está completo como está: camada bronze é carregada, validada e
 - **Armazenamento de objetos, não um volume local.** A _landing zone_ seria S3/ADLS com regras de ciclo de vida; `include/storage.py` é deliberadamente pequeno para que trocar o backend seja mudança de um único arquivo.
 - **Gerar uma imagem já comdependências embutidas.** `_PIP_ADDITIONAL_REQUIREMENTS` instala dependências na inicialização do container: o que existe hoje é aceitável em um notebook pessoal, mas inaceitável em em deploy.
 - **Segredos vindos de um backend de verdade.** Azure Key Vault ou AWS Secrets Manager via _secrets backend_ do Airflow, não variáveis de ambiente.
-- **Autenticação.** A autenticação está desabilitada no compose local; esta stack escuta só em localhost e contém dado público. Uma instância implantada não seria assim.
+- **Autenticação.** O compose local vem com o gerenciador de autenticação FAB do Airflow e uma única conta `airflow` / `airflow` criada na primeira inicialização. Adequado para um projeto em localhost e contém dados públicos. Uma instância implantada usaria um provedor de identidade real e nenhuma credencial padrão.
 - **Um SLA de frescor.** No momento, nada reclama se uma execução simplesmente nunca disparar.
 - **Contrato de schema na origem.** Hoje um campo novo na API passa despercebido; deveria ser detectado.
 
