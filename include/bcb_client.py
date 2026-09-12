@@ -9,13 +9,14 @@ Response shape:
 
 Quirks this module handles, because they are the actual work:
   * dates are DD/MM/YYYY, values are strings with a '.' decimal separator;
-  * an empty window returns `[]` with HTTP 200, NOT an error - weekends,
-    holidays and monthly series queried on a daily grain all hit this;
+  * an empty window comes back two different ways: `[]` with HTTP 200, and
+    bare HTTP 404. Weekends, holidays and monthly series queried on a daily
+    grain hit both. Neither is a failure;
   * the API rate-limits aggressively and answers 429 without Retry-After;
   * occasional 5xx under load.
 
 Network errors and 5xx/429 are retried with exponential backoff; 4xx other
-than 429 fail fast, because retrying a malformed request never helps.
+than 429 and 404 fail fast, because retrying a malformed request never helps.
 """
 
 from __future__ import annotations
@@ -33,6 +34,13 @@ log = logging.getLogger(__name__)
 
 BASE_URL = "https://api.bcb.gov.br/dados/serie/bcdata.sgs.{code}/dados"
 RETRYABLE_STATUS = {429, 500, 502, 503, 504}
+
+# SGS answers 404 - not an empty 200 - when a series has no observation inside
+# the requested window. Monthly series queried on a daily grain hit this on
+# most days. It is indistinguishable from "this series code does not exist",
+# so the code is validated once at config level rather than per request, and
+# here a 404 is read as "nothing in this window".
+EMPTY_STATUS = {404}
 
 
 class BcbApiError(RuntimeError):
@@ -130,6 +138,9 @@ def fetch_series(
                         raise BcbApiError(f"series {code}: expected a list, got {type(payload).__name__}")
                     log.info("series %s: %d records for %s..%s", code, len(payload), start, end)
                     return parse_payload(payload, code, name)
+            elif resp.status_code in EMPTY_STATUS:
+                log.info("series %s: no observation in %s..%s (HTTP 404)", code, start, end)
+                return []
             elif resp.status_code in RETRYABLE_STATUS:
                 last_error = BcbApiError(f"HTTP {resp.status_code}")
                 log.warning("series %s attempt %d/%d: HTTP %s", code, attempt, max_attempts, resp.status_code)
