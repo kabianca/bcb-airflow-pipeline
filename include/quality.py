@@ -58,12 +58,23 @@ def check_rows(
     )
 
     # 3. Every observation falls inside the interval this run owns.
-    outside = [
-        d for d in dates
-        if not (interval_start.isoformat() <= d < interval_end.isoformat())
-    ]
+    #    DAILY SERIES ONLY. The check catches an off-by-one in the API window,
+    #    a real risk when both ends move every day. Monthly series are dated by
+    #    the source on the 1st of the reference month and are returned by
+    #    whichever daily window picks them up, so the same assertion fails on
+    #    correct data - a false alarm that trains you to ignore the alert.
+    outside: list[str] = []
+    if frequency == "daily":
+        outside = [
+            d for d in dates
+            if not (interval_start.isoformat() <= d < interval_end.isoformat())
+        ]
     results.append(
-        CheckResult("dates_within_interval", passed=not outside, detail=f"outside: {outside[:5]}")
+        CheckResult(
+            "dates_within_interval",
+            passed=not outside,
+            detail=f"outside: {outside[:5]}" if frequency == "daily" else "skipped (monthly)",
+        )
     )
 
     # 4. Values parse and sit inside sane bounds - catches scale/parsing bugs

@@ -104,3 +104,22 @@ def test_rewriting_the_same_interval_overwrites(tmp_path):
     write_atomic(p, rows(("2026-09-07", "14.75")))
     assert json.loads(p.read_text())[0]["value"] == "14.75"
     assert len(list(p.parent.iterdir())) == 1
+
+def test_monthly_series_dated_outside_the_window_is_accepted():
+    """BCB dates monthly series on the 1st; a daily window still picks them up."""
+    monthly = [{"series_code": 433, "series_name": "ipca",
+                "obs_date": "2026-08-01", "value": "0.35"}]
+    res = check_rows(monthly, series_name="ipca", frequency="monthly",
+                     min_value=-10, max_value=10,
+                     interval_start=date(2026, 8, 3), interval_end=date(2026, 8, 4))
+    assert failed(res) == set()
+
+
+def test_daily_series_dated_outside_the_window_still_fails():
+    """The off-by-one guard must stay armed where it actually protects."""
+    daily = [{"series_code": 1, "series_name": "usd_brl_ptax",
+              "obs_date": "2026-08-01", "value": "5.40"}]
+    res = check_rows(daily, series_name="usd_brl_ptax", frequency="daily",
+                     min_value=0.5, max_value=50,
+                     interval_start=date(2026, 8, 3), interval_end=date(2026, 8, 4))
+    assert "dates_within_interval" in failed(res)

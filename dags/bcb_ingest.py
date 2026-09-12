@@ -20,6 +20,7 @@ from datetime import date, timedelta
 
 import pendulum
 from airflow.sdk import Asset, dag, task
+from airflow.timetables.interval import CronDataIntervalTimetable
 
 from include.config import all_series_as_dicts
 from include.quality import assert_quality, check_rows
@@ -29,7 +30,7 @@ from include.warehouse import load_interval
 
 log = logging.getLogger(__name__)
 
-BRONZE = Asset("postgres://warehouse/bronze.bcb_series")
+BRONZE = Asset("warehouse://bronze/bcb_series")
 
 DEFAULT_ARGS = {
     "retries": 3,
@@ -42,8 +43,12 @@ DEFAULT_ARGS = {
 @dag(
     dag_id="bcb_series_ingest",
     description="BCB SGS series -> raw landing -> bronze (idempotent, backfillable)",
-    start_date=pendulum.datetime(2026, 1, 1, tz="America/Sao_Paulo"),
-    schedule="0 6 * * 1-5",       # business days, after the BCB publishes
+    start_date=pendulum.datetime(2026, 8, 3, tz="America/Sao_Paulo"),  # ~6 semanas de catchup
+    # Airflow 3 turns a bare cron string into a CronTriggerTimetable, whose
+    # "data interval" has zero width (start == end == run time). This DAG is
+    # interval-scoped, so the interval timetable is declared explicitly rather
+    # than relying on the global `create_cron_data_intervals` setting.
+    schedule=CronDataIntervalTimetable("0 6 * * 1-5", timezone="America/Sao_Paulo"),
     catchup=True,                 # Airflow 3 defaults this to False - be explicit
     max_active_runs=3,            # bounded parallelism when backfilling
     default_args=DEFAULT_ARGS,
@@ -60,12 +65,18 @@ def bcb_series_ingest():
         return series
 
     @task(
-        pool="bcb_api",                 # shared slot budget: respects the rate limit
-        max_active_tis_per_dag=2,       # ... even during a wide backfill
+        pool="bcb_api",  # shared slot budget: respects the rate limit
+        max_active_tis_per_dag=2,  # ... even during a wide backfill
         retries=5,
     )
     def fetch(series: dict, **context) -> dict:
         """Fetch ONE series for the interval this run owns, land it atomically."""
+        if context.get("data_interval_start") is None:
+            raise ValueError(
+                "This DAG is interval-scoped: every run must own a data interval. "
+                "Trigger it with `airflow dags trigger <dag> --logical-date <ts>` "
+                "or via backfill."
+            )
         start: date = context["data_interval_start"].date()
         end: date = context["data_interval_end"].date()
 
