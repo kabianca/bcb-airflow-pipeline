@@ -1,0 +1,78 @@
+# Override layered on top of the OFFICIAL Airflow compose file.
+#
+# `make init` downloads docker-compose.yaml from the Airflow docs; Docker
+# Compose merges this file over it automatically. Keeping upstream untouched
+# means an Airflow upgrade is a one-line change in the Makefile, not a merge
+# conflict in a 300-line file I forked.
+#
+# This file adds exactly two things:
+#   1. a SEPARATE Postgres for the warehouse (never reuse Airflow's metadata DB);
+#   2. the project mounts and env the DAG needs.
+
+x-project-env: &project-env
+  WAREHOUSE_DSN: postgresql://warehouse:warehouse@warehouse:5432/warehouse
+  DATA_ROOT: /opt/airflow/data
+  PYTHONPATH: /opt/airflow
+  AIRFLOW__CORE__TEST_CONNECTION: Enabled
+
+x-project-volumes: &project-volumes
+  - ./dags:/opt/airflow/dags
+  - ./include:/opt/airflow/include
+  - ./sql:/opt/airflow/sql
+  - ./data:/opt/airflow/data
+  - ./logs:/opt/airflow/logs
+  - ./plugins:/opt/airflow/plugins
+
+services:
+  # ---------------------------------------------------------------- warehouse
+  warehouse:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: warehouse
+      POSTGRES_PASSWORD: warehouse
+      POSTGRES_DB: warehouse
+    volumes:
+      - warehouse-db:/var/lib/postgresql/data
+      # Files in this directory run once, in name order, on first boot.
+      - ./sql:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "5433:5432"        # 5433 on the host: 5432 belongs to Airflow's metadata DB
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "warehouse"]
+      interval: 10s
+      retries: 5
+      start_period: 5s
+    restart: always
+
+  # ------------------------------------------- Airflow services get our env
+  # Service names below match the official Airflow 3 compose file. If an
+  # upgrade renames one, Compose fails with "no such service" and you fix the
+  # name here - a deliberate, visible failure rather than silent misconfiguration.
+  airflow-apiserver:
+    environment: *project-env
+    volumes: *project-volumes
+    depends_on:
+      warehouse:
+        condition: service_healthy
+
+  airflow-scheduler:
+    environment: *project-env
+    volumes: *project-volumes
+    depends_on:
+      warehouse:
+        condition: service_healthy
+
+  airflow-dag-processor:
+    environment: *project-env
+    volumes: *project-volumes
+
+  airflow-triggerer:
+    environment: *project-env
+    volumes: *project-volumes
+
+  airflow-init:
+    environment: *project-env
+    volumes: *project-volumes
+
+volumes:
+  warehouse-db:
