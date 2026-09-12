@@ -10,10 +10,10 @@ import pytest
 from include.quality import DataQualityError, assert_quality, check_rows
 from include.storage import raw_path, read_rows, write_atomic
 
-MON = date(2026, 9, 7)   # Monday
-TUE = date(2026, 9, 8)
-SAT = date(2026, 9, 5)   # Saturday
-SUN = date(2026, 9, 6)
+MON = date(2026, 9, 14)  # Monday, and NOT a holiday - see HOLIDAY_MON below
+TUE = date(2026, 9, 15)
+SAT = date(2026, 9, 12)  # Saturday
+SUN = date(2026, 9, 13)
 
 
 def rows(*pairs):
@@ -35,7 +35,7 @@ def failed(results):
 
 
 def test_happy_path_passes_everything():
-    assert failed(run(rows(("2026-09-07", "5.42")))) == set()
+    assert failed(run(rows(("2026-09-14", "5.42")))) == set()
 
 
 def test_empty_on_a_business_day_fails():
@@ -52,45 +52,45 @@ def test_empty_monthly_series_on_a_daily_grain_is_fine():
 
 
 def test_duplicate_dates_fail():
-    assert "no_duplicate_dates" in failed(run(rows(("2026-09-07", "5.4"), ("2026-09-07", "5.5"))))
+    assert "no_duplicate_dates" in failed(run(rows(("2026-09-14", "5.4"), ("2026-09-14", "5.5"))))
 
 
 def test_row_outside_the_interval_fails():
     """Catches an off-by-one in the API window - the bug this design invites."""
-    assert "dates_within_interval" in failed(run(rows(("2026-09-08", "5.4"))))
+    assert "dates_within_interval" in failed(run(rows(("2026-09-15", "5.4"))))
 
 
 def test_interval_end_is_exclusive():
     assert "dates_within_interval" in failed(
-        run(rows(("2026-09-08", "5.4")), start=MON, end=TUE)
+        run(rows(("2026-09-15", "5.4")), start=MON, end=TUE)
     )
 
 
 def test_out_of_range_value_fails():
     """A rate parsed as 542 instead of 5.42 is a scale bug, not a market move."""
-    assert "values_in_range" in failed(run(rows(("2026-09-07", "542"))))
+    assert "values_in_range" in failed(run(rows(("2026-09-14", "542"))))
 
 
 def test_unparseable_value_fails():
-    assert "values_in_range" in failed(run(rows(("2026-09-07", "n/a"))))
+    assert "values_in_range" in failed(run(rows(("2026-09-14", "n/a"))))
 
 
 def test_assert_quality_raises_with_detail():
     with pytest.raises(DataQualityError, match="no_duplicate_dates"):
-        assert_quality(run(rows(("2026-09-07", "5.4"), ("2026-09-07", "5.5"))), "usd_brl_ptax")
+        assert_quality(run(rows(("2026-09-14", "5.4"), ("2026-09-14", "5.5"))), "usd_brl_ptax")
 
 
 # ---------- storage ----------
 
 def test_raw_path_is_hive_partitioned(tmp_path):
     p = raw_path("selic_meta", MON, root=tmp_path)
-    assert p.parent.name == "dt=2026-09-07"
+    assert p.parent.name == "dt=2026-09-14"
     assert p.parent.parent.name == "selic_meta"
 
 
 def test_write_is_atomic_and_roundtrips(tmp_path):
     p = raw_path("selic_meta", MON, root=tmp_path)
-    data = rows(("2026-09-07", "15.00"))
+    data = rows(("2026-09-14", "15.00"))
     write_atomic(p, data)
     assert read_rows(p) == data
     # no temp files left behind
@@ -100,10 +100,11 @@ def test_write_is_atomic_and_roundtrips(tmp_path):
 def test_rewriting_the_same_interval_overwrites(tmp_path):
     """Deterministic paths are half of the idempotency story."""
     p = raw_path("selic_meta", MON, root=tmp_path)
-    write_atomic(p, rows(("2026-09-07", "15.00")))
-    write_atomic(p, rows(("2026-09-07", "14.75")))
+    write_atomic(p, rows(("2026-09-14", "15.00")))
+    write_atomic(p, rows(("2026-09-14", "14.75")))
     assert json.loads(p.read_text())[0]["value"] == "14.75"
     assert len(list(p.parent.iterdir())) == 1
+
 
 def test_monthly_series_dated_outside_the_window_is_accepted():
     """BCB dates monthly series on the 1st; a daily window still picks them up."""
@@ -123,3 +124,23 @@ def test_daily_series_dated_outside_the_window_still_fails():
                      min_value=0.5, max_value=50,
                      interval_start=date(2026, 8, 3), interval_end=date(2026, 8, 4))
     assert "dates_within_interval" in failed(res)
+
+
+# 7 Sep 2026 is a Monday AND Brazilian Independence Day - the run that
+# surfaced this gap in production.
+HOLIDAY_MON = date(2026, 9, 7)
+
+
+def test_empty_daily_series_on_a_national_holiday_is_fine():
+    """No PTAX quote on Independence Day is correct data, not a failure."""
+    res = run([], frequency="daily", start=HOLIDAY_MON, end=date(2026, 9, 8))
+    assert failed(res) == set()
+    detail = next(r.detail for r in res if r.name == "non_empty_when_expected")
+    assert "market closed" in detail
+
+
+def test_empty_daily_series_on_a_plain_business_day_still_fails():
+    """Relaxing for holidays must not disarm the check on a normal Tuesday."""
+    res = run([], frequency="daily", start=date(2026, 9, 8), end=date(2026, 9, 9))
+    assert "non_empty_when_expected" in failed(res)
+    

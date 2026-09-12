@@ -1,8 +1,12 @@
 # Runtime deps of the pipeline code (Airflow itself comes from the image)
 requests>=2.32
 psycopg[binary]>=3.2
+holidays>=0.60          # Brazilian national holiday calendar for data-quality rules
+ 
+# Test parity: the DAG integrity test only catches provider-level problems
+# (e.g. an invalid Asset URI) when the same providers are installed.
 apache-airflow-providers-postgres>=6.0
-
+ 
 # Dev / test
 pytest>=8.0
 ruff>=0.6

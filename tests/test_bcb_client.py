@@ -106,12 +106,24 @@ def test_non_json_200_is_retried():
     assert len(obs) == 3
 
 
-def test_4xx_fails_fast_without_retrying():
-    session = FakeSession([FakeResponse(404, text="no such series")])
-    with pytest.raises(BcbApiError, match="404"):
-        fetch_series(999999, "nope", date(2026, 9, 1), date(2026, 9, 3),
+def test_404_means_empty_window_not_failure():
+    """SGS answers 404 when a series has no observation in the window.
+
+    Monthly series queried on a daily grain hit this on most days; treating it
+    as a hard error fails the pipeline on correct, expected behaviour.
+    """
+    session = FakeSession([FakeResponse(404, text="no data")])
+    assert fetch_series(433, "ipca", date(2026, 9, 2), date(2026, 9, 2), session=session) == []
+    assert session.calls == 1  # not retried - it is an answer, not a fault
+
+
+def test_other_4xx_still_fails_fast():
+    """A malformed request is permanent - retrying it only delays the alert."""
+    session = FakeSession([FakeResponse(400, text="bad request")])
+    with pytest.raises(BcbApiError, match="400"):
+        fetch_series(432, "s", date(2026, 9, 1), date(2026, 9, 3),
                      session=session, sleep=lambda _: None)
-    assert session.calls == 1  # did not waste retries on a permanent error
+    assert session.calls == 1
 
 
 def test_gives_up_after_max_attempts():

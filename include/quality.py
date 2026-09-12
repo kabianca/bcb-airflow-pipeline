@@ -12,6 +12,14 @@ from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 
+import holidays
+
+
+# Brazilian national holidays. The BCB publishes no daily quote on them, and
+# nine of them fall on a weekday in 2026 - a check that ignores the calendar
+# cries wolf nine times a year, which is how people learn to ignore alerts.
+_BR_HOLIDAYS = holidays.Brazil()
+
 
 class DataQualityError(AssertionError):
     """Raised when loaded data violates an expectation."""
@@ -37,16 +45,19 @@ def check_rows(
     """Return one CheckResult per expectation. Pure - easy to unit test."""
     results: list[CheckResult] = []
 
-    # 1. Emptiness is only an error for daily series on a business day.
-    #    Monthly series are legitimately empty on most days, and so are
-    #    weekends and holidays. Encoding that distinction is the point.
+    # 1. Absence has three shapes, and only one of them is a fault.
+    #    A daily series legitimately returns nothing on weekends and on
+    #    national holidays; a monthly series returns nothing on most days.
+    #    Encoding that distinction is the whole point of the check.
     is_weekend = interval_start.weekday() >= 5
-    expect_rows = frequency == "daily" and not is_weekend
+    is_holiday = interval_start in _BR_HOLIDAYS
+    expect_rows = frequency == "daily" and not is_weekend and not is_holiday
+    closed = "weekend" if is_weekend else (_BR_HOLIDAYS.get(interval_start) or "holiday") if is_holiday else ""
     results.append(
         CheckResult(
             "non_empty_when_expected",
             passed=bool(rows) or not expect_rows,
-            detail=f"{len(rows)} rows, expect_rows={expect_rows}",
+            detail=f"{len(rows)} rows, expect_rows={expect_rows}" + (f" (market closed: {closed})" if closed else ""),
         )
     )
 
@@ -106,3 +117,4 @@ def assert_quality(results: list[CheckResult], series_name: str) -> None:
     if failed:
         lines = "\n".join(f"  - {r.name}: {r.detail}" for r in failed)
         raise DataQualityError(f"{series_name}: {len(failed)} check(s) failed\n{lines}")
+    
