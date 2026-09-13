@@ -8,10 +8,12 @@ Incremental, backfillable ingestion of Brazilian Central Bank (BCB) time series
 into a Postgres warehouse, orchestrated with Apache Airflow 3.
 
 <p>
+  <a href="https://github.com/kabianca/bcb-airflow-pipeline/actions/workflows/tests.yml">
+    <img src="https://github.com/kabianca/bcb-airflow-pipeline/actions/workflows/tests.yml/badge.svg" alt="tests">
+  </a>
   <img src="https://img.shields.io/badge/Apache%20Airflow-3.3-017CEE?logo=apacheairflow&logoColor=white" alt="Apache Airflow 3.3">
   <img src="https://img.shields.io/badge/Python-3.12+-3776AB?logo=python&logoColor=white" alt="Python 3.12+">
   <img src="https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white" alt="PostgreSQL 16">
-  <img src="https://img.shields.io/badge/tests-pytest-0A9EDC?logo=pytest&logoColor=white" alt="pytest">
   <img src="https://img.shields.io/badge/license-GPL--3.0-green" alt="GPL-3.0 license">
 </p>
 
